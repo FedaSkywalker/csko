@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Browser Strike</title>
+  <meta name="description" content="Tactical 5v5 bomb-defusal FPS in the browser (three.js)" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%2211%22 fill=%22none%22 stroke=%22%23e7b34c%22 stroke-width=%223%22/%3E%3Cpath d=%22M16 2v9M16 21v9M2 16h9M21 16h9%22 stroke=%22%23e7b34c%22 stroke-width=%223%22/%3E%3C/svg%3E" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="crosshair"><div class="ch l"></div><div class="ch r"></div><div class="ch t"></div><div class="ch b"></div><div class="ch dot"></div></div>
+    <div id="scope"><div class="scope-mask"></div><div class="scope-h"></div><div class="scope-v"></div></div>
+    <div id="smokeOverlay"></div>
+    <div id="flashOverlay"></div>
+    <div id="hurt"></div>
+    <div id="dmgArc"></div>
+
+    <div id="radarWrap"><canvas id="radar" width="200" height="200"></canvas><div id="location"></div></div>
+
+    <div id="topbar">
+      <div class="side t"><span class="alive" id="aliveT"></span><span class="score" id="scoreT">0</span></div>
+      <div class="mid"><div id="timer">0:00</div><div id="roundNo">Round 1</div></div>
+      <div class="side ct"><span class="score" id="scoreCT">0</span><span class="alive" id="aliveCT"></span></div>
+    </div>
+
+    <div id="killfeed"></div>
+    <div id="chat"></div>
+    <div id="chatInputWrap" class="hidden"><span id="chatPrefix">ALL</span><input id="chatInput" maxlength="120" autocomplete="off" spellcheck="false" /></div>
+
+    <div id="bottomLeft">
+      <div class="stat hp"><span class="icon">✚</span><span id="hp">100</span></div>
+      <div class="stat ar"><span class="icon" id="armorIcon">◈</span><span id="armor">0</span></div>
+    </div>
+    <div id="moneyWrap"><div id="money">$800</div><div id="moneyDelta"></div></div>
+
+    <div id="bottomRight">
+      <div id="inventory"></div>
+      <div id="weaponName">Knife</div>
+      <div id="ammo"><span id="mag">0</span><span class="sep">/</span><span id="reserve">0</span></div>
+    </div>
+
+    <div id="centerMsg"><div id="centerTitle"></div><div id="centerSub"></div></div>
+    <div id="hint"></div>
+    <div id="progress"><div id="progressLabel"></div><div class="bar"><div id="progressFill"></div></div></div>
+    <div id="targetName"></div>
+    <div id="spectate"></div>
+    <div id="deathInfo"></div>
+    <div id="netgraph"></div>
+    <div id="buymenu" class="hidden"></div>
+    <div id="scoreboard" class="hidden"></div>
+  </div>
+
+  <div id="menu" class="overlay">
+    <div class="menu-panel">
+      <div class="menu-left">
+        <div class="logo">BROWSER<span>STRIKE</span></div>
+        <div class="tagline">Tactical 5v5 bomb defusal · map <b id="mapName">Dustline</b></div>
+        <button id="playBtn" class="big">PLAY vs BOTS</button>
+        <div id="lockMsg" class="lockmsg"></div>
+        <div class="lan">
+          <div class="lan-title">Multiplayer (PartyKit)</div>
+          <div class="lan-row">
+            <input id="serverInput" spellcheck="false" placeholder="server, e.g. 192.168.1.10:1999" title="PartyKit host" />
+            <input id="roomInput" class="room" spellcheck="false" maxlength="32" placeholder="room" title="Room name: same room = same match" />
+            <button id="joinBtn" class="lanbtn">JOIN</button>
+          </div>
+          <div id="lanMsg" class="lanmsg"></div>
+          <div class="lan-help">Everyone in the same <b>room</b> plays the same match. The first player in an empty room decides the map, team size, bot skill and match length (settings on the right). Host locally with <code>npm run party</code> or put it online with <code>npm run deploy</code>.</div>
+        </div>
+        <div class="controls">
+          <div><b>WASD</b> move · <b>Mouse</b> aim · <b>LMB</b> fire · <b>RMB</b> scope / heavy stab</div>
+          <div><b>Space</b> jump · <b>Ctrl / C</b> crouch · <b>Shift</b> walk (silent)</div>
+          <div><b>1–5</b> weapons · <b>Q</b> last weapon · <b>Wheel</b> cycle · <b>R</b> reload</div>
+          <div><b>B</b> buy menu · <b>E</b> use / plant / defuse / pick up · <b>G</b> drop</div>
+          <div><b>Tab</b> scoreboard · <b>Y</b> / <b>U</b> chat (all / team) · <b>F</b> inspect · <b>`</b> net graph · <b>Esc</b> pause</div>
+        </div>
+      </div>
+      <div class="menu-right">
+        <div class="opt"><label>Name</label><input id="nameInput" maxlength="16" value="You" /></div>
+        <div class="opt"><label>Map</label><div class="seg" data-opt="map">
+          <button data-val="dustline">Dustline</button><button data-val="nuke">Nukeline (A nad B)</button></div></div>
+        <div class="opt"><label>Team</label><div class="seg" data-opt="team">
+          <button data-val="T">Terrorists</button><button data-val="CT">Counter-Terrorists</button><button data-val="auto">Auto</button></div></div>
+        <div class="opt"><label>Team size</label><div class="seg" data-opt="teamSize">
+          <button data-val="1">1v1</button><button data-val="2">2v2</button><button data-val="3">3v3</button><button data-val="4">4v4</button><button data-val="5">5v5</button></div></div>
+        <div class="opt"><label>Bot skill</label><div class="seg" data-opt="difficulty">
+          <button data-val="easy">Easy</button><button data-val="normal">Normal</button><button data-val="hard">Hard</button></div></div>
+        <div class="opt"><label>Match</label><div class="seg" data-opt="winsNeeded">
+          <button data-val="5">First to 5</button><button data-val="8">First to 8</button><button data-val="16">First to 16</button></div></div>
+        <div class="opt"><label>Hlášky / trash talk</label><div class="seg" data-opt="dialect">
+          <button data-val="1">Východniarsky</button><button data-val="0">English</button></div></div>
+        <div class="opt"><label>Mená nad hlavami / name tags</label><div class="seg" data-opt="nameTags">
+          <button data-val="all">All</button><button data-val="team">Team only</button><button data-val="off">Off</button></div></div>
+        <div class="opt"><label>Graphics</label><div class="seg" data-opt="quality">
+          <button data-val="low">Fast</button><button data-val="high">Pretty</button></div></div>
+        <div class="opt"><label>Sensitivity <span id="sensVal"></span></label><input type="range" id="sensInput" min="0.3" max="8" step="0.05" /></div>
+        <div class="opt"><label>Field of view <span id="fovVal"></span></label><input type="range" id="fovInput" min="60" max="100" step="1" /></div>
+        <div class="opt"><label>Volume <span id="volVal"></span></label><input type="range" id="volInput" min="0" max="1" step="0.01" /></div>
+        <div class="opt check"><label><input type="checkbox" id="voiceInput" /> Voice (announcer + bots, speech synthesis)</label></div>
+        <div class="note">Graphics setting applies after reload.</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <div class="pause-panel">
+      <div class="logo small">PAUSED</div>
+      <button id="resumeBtn" class="big">RESUME</button>
+      <div id="pauseLockMsg" class="lockmsg"></div>
+      <div id="pauseNote" class="note"></div>
+      <div class="opt"><label>Sensitivity <span id="sensVal2"></span></label><input type="range" id="sensInput2" min="0.3" max="8" step="0.05" /></div>
+      <div class="opt"><label>Field of view <span id="fovVal2"></span></label><input type="range" id="fovInput2" min="60" max="100" step="1" /></div>
+      <div class="opt"><label>Volume <span id="volVal2"></span></label><input type="range" id="volInput2" min="0" max="1" step="0.01" /></div>
+      <div class="row"><button id="teamT" class="ghost">Switch to T</button><button id="teamCT" class="ghost">Switch to CT</button></div>
+      <button id="quitBtn" class="ghost">Quit to menu</button>
+    </div>
+  </div>
+
+  <div id="matchover" class="overlay hidden">
+    <div class="pause-panel wide">
+      <div id="moTitle" class="logo small"></div>
+      <div id="moScore" class="mo-score"></div>
+      <div id="moTable"></div>
+      <div id="moNote" class="lockmsg"></div>
+      <div class="row"><button id="againBtn" class="big">PLAY AGAIN</button><button id="menuBtn" class="ghost">Menu</button></div>
+    </div>
+  </div>
+
+  <div id="loading" class="overlay"><div class="loading-text">Loading…</div></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

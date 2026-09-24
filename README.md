@@ -25,6 +25,22 @@ npm run build
 npm run preview   # http://localhost:4173
 ```
 
+## Maps
+
+Pick the map in the menu (**Map**). The menu flyover shows the selected one.
+
+- **Dustline:** a desert map with long A, catwalk, mid with mid doors, B tunnels and two bombsites
+  on one floor.
+- **Nukeline:** an industrial map in the spirit of the classic nuclear plant, on two floors. Bombsite
+  **A** is in the reactor hall on the main floor, bombsite **B** is directly underneath it.
+  - T side: spawn, lobby, squeaky (a corridor with a turn), hut, main door and the outside yard with
+    silos, containers and a Turkish Kebab kiosk.
+  - CT side: spawn, garage, mini, heaven (a catwalk above A) and hell below it.
+  - Ways down to B: the ramp from the lobby, the secret stairs from the yard, the decon stairs and the
+    CT stairs from CT spawn, and one-way drops through the hatch and the vent in A's floor.
+  - The radar switches between **UPPER** and **LOWER** depending on where you stand; players on the
+    other floor are drawn faded.
+
 ## Multiplayer (PartyKit)
 
 Multiplayer runs on [PartyKit](https://docs.partykit.io/). Each **room** is its own match: a PartyKit
@@ -53,8 +69,8 @@ Ready on http://0.0.0.0:1999
 - The host opens `http://localhost:1999`, the others open the LAN address (`http://192.168.1.23:1999`).
 - In the menu set your name and team, pick a **room** name (default `dustline`) and click **JOIN**.
   Everyone who types the same room plays together. Different rooms are separate matches.
-- The first player in an empty room decides team size, bot skill and match length (the settings on
-  the right side of the menu).
+- The first player in an empty room decides the map, team size, bot skill and match length (the
+  settings on the right side of the menu). Players who join later get the room's map automatically.
 
 ### Online (anyone, anywhere)
 
@@ -166,15 +182,15 @@ On Windows, `Ctrl+W` closes the browser tab and the page cannot block it. Crouch
   - Before aiming they have a reaction time, and their aim is imperfect.
   - They fire in bursts, buy weapons from their team's money, throw grenades, and run from
     the bomb when it is about to explode.
-- **Map "Dustline":** a desert map inspired by classic layouts.
-  - Areas: long A, catwalk, mid with mid doors, B tunnels, two bombsites, crates.
-  - Real-time sun shadows.
+- **Two maps:** Dustline (desert, one floor) and Nukeline (industrial, bombsite A above bombsite B),
+  with real-time sun shadows. Bots navigate both floors, including stairs, the ramp and the drops.
 - **HUD:**
   - Rotating radar, kill feed, scoreboard and buy menu.
   - Damage direction indicator.
   - AWP scope overlay and flashbang whiteout.
   - Smoke that blocks bots' vision.
-- **Turkish Kebab:** a small restaurant off mid (sign above the door, turning döner, tables). Fried
+- **Turkish Kebab:** a small restaurant off mid on Dustline and a kiosk in the yard on Nukeline (sign
+  above the door, turning döner, tables). Fried
   cheese ("vyprážaný syr") is served on the counter and on a table. Walk over it while hurt to heal
   +50 HP; it comes back 25 seconds later. Wounded bots go there to eat too, and it's on the radar as an
   orange square.
@@ -208,7 +224,15 @@ src/
   round.js       round flow, bomb, economy, win conditions
   combat.js      bullets, penetration, knife, explosions
   physics.js     AABB character controller
-  map/           layout (grid map), world (merged geometry + collision + raycasts), nav (A*)
+  map/
+    layout.js    map registry (buildLayout(id)), zones with optional floor bands
+    maps/        dustline.js, nuke.js: the map definitions (geometry, spawns, sites, AI routes)
+    columns.js   column map: solid height spans per 1 m cell, so floors can stack
+    world.js     merged collision boxes, raycasts, batched meshes
+    nav.js       multi-floor navigation graph for bots (A*, drop links, smoothing)
+    decor.js     silos, pipes, signs, cooling towers, lamps
+    materials.js surface materials (textures, impact colors)
+  restaurant.js  Turkish Kebab decor
   viewmodel.js   first-person weapon + arms, rendered as a separate pass
   characters.js  third-person soldier models and animation
   models.js      procedural weapon models
