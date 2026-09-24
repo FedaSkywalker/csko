@@ -105,7 +105,7 @@ function startMatch() {
   enterGame();
 }
 
-function partyTarget(addr, room) {
+function serverTarget(addr, room) {
   const host = (addr || location.host).replace(/^(https?|wss?):\/\//, '').replace(/\/.*$/, '');
   return { host, room, protocol: location.protocol === 'https:' ? 'wss' : 'ws' };
 }
@@ -125,20 +125,20 @@ async function joinRoom(addr = $('serverInput').value.trim() || location.host, r
   game.audio.init();
   game.applySettings({ ...settings });
   try {
-    await game.startNet(partyTarget(addr, room), {
+    await game.startNet(serverTarget(addr, room), {
       playerName: settings.name, team: settings.team, map: settings.map,
       teamSize: settings.teamSize, difficulty: settings.difficulty, winsNeeded: settings.winsNeeded,
     });
     $('lanMsg').textContent = '';
     enterGame();
   } catch (err) {
-    $('lanMsg').textContent = `${err.message} Is the PartyKit server running (npm run party) and reachable at ${addr}?`;
+    $('lanMsg').textContent = `${err.message} Is the server running (npm start) and reachable at ${addr}?`;
   }
 }
 
 $('playBtn').addEventListener('click', startMatch);
 $('againBtn').addEventListener('click', startMatch);
-// The page is served by the PartyKit server (or the Vite proxy), so its own host is the right default.
+// The page is served by the game server (or the Vite proxy), so its own host is the right default.
 $('serverInput').value = location.host;
 $('roomInput').value = settings.room || 'dustline';
 $('joinBtn').addEventListener('click', () => joinRoom());

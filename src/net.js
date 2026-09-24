@@ -1,5 +1,4 @@
-// Browser side of a multiplayer session: a PartySocket connection to one PartyKit room.
-import PartySocket from 'partysocket';
+// Browser side of a multiplayer session: one WebSocket to one game room on the Node server.
 import { NET_PROTOCOL } from './config.js';
 
 export class NetClient {
@@ -11,7 +10,7 @@ export class NetClient {
     this.established = false;
   }
 
-  // target: { host: 'localhost:1999' | 'browser-strike.you.partykit.dev', room: 'dustline' }
+  // target: { host: 'localhost:3000' | 'strike.example.com', room: 'dustline', protocol: 'ws' | 'wss' }
   connect(target, hello) {
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -24,12 +23,7 @@ export class NetClient {
       };
       let ws;
       try {
-        ws = new PartySocket({
-          host: target.host,
-          room: target.room,
-          protocol: target.protocol,
-          maxRetries: 0, // a dropped match can't be resumed, so don't reconnect silently
-        });
+        ws = new WebSocket(`${target.protocol}://${target.host}/ws/${encodeURIComponent(target.room)}`);
       } catch (e) {
         reject(e);
         return;
@@ -47,8 +41,9 @@ export class NetClient {
         if (m.t === 'welcome') {
           this.established = true;
           done(resolve, m);
+        } else if (m.t === 'error') {
+          done(reject, new Error(m.msg || 'Server refused the connection.'));
         }
-        else if (m.t === 'error') done(reject, new Error(m.msg || 'Server refused the connection.'));
         this.onMessage(m);
       });
       ws.addEventListener('error', () => done(reject, new Error(`Cannot connect to ${target.host}.`)));

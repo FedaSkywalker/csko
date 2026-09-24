@@ -61,14 +61,14 @@
         <button id="playBtn" class="big">PLAY vs BOTS</button>
         <div id="lockMsg" class="lockmsg"></div>
         <div class="lan">
-          <div class="lan-title">Multiplayer (PartyKit)</div>
+          <div class="lan-title">Multiplayer</div>
           <div class="lan-row">
-            <input id="serverInput" spellcheck="false" placeholder="server, e.g. 192.168.1.10:1999" title="PartyKit host" />
+            <input id="serverInput" spellcheck="false" placeholder="server, e.g. 192.168.1.10:3000" title="Game server address" />
             <input id="roomInput" class="room" spellcheck="false" maxlength="32" placeholder="room" title="Room name: same room = same match" />
             <button id="joinBtn" class="lanbtn">JOIN</button>
           </div>
           <div id="lanMsg" class="lanmsg"></div>
-          <div class="lan-help">Everyone in the same <b>room</b> plays the same match. The first player in an empty room decides the map, team size, bot skill and match length (settings on the right). Host locally with <code>npm run party</code> or put it online with <code>npm run deploy</code>.</div>
+          <div class="lan-help">Everyone in the same <b>room</b> plays the same match. The first player in an empty room decides the map, team size, bot skill and match length (settings on the right). Host it with <code>npm run serve</code> (LAN) or run the same server on a VPS (see README).</div>
         </div>
         <div class="controls">
           <div><b>WASD</b> move · <b>Mouse</b> aim · <b>LMB</b> fire · <b>RMB</b> scope / heavy stab</div>

@@ -1,5 +1,5 @@
 // Client: renderer, scenes, camera, input, audio, HUD. Drives a local Sim (single-player) or mirrors
-// a remote Sim from a PartyKit room (multiplayer), predicting the local player's movement.
+// a remote Sim from a server room (multiplayer), predicting the local player's movement.
 import * as THREE from 'three';
 import { DT, DEG, WEAPONS, NET_INTERP } from './config.js';
 import { validMap, DEFAULT_MAP } from './map/layout.js';
@@ -319,7 +319,7 @@ export class Game {
     this.startLocal(opts);
   }
 
-  // target: { host, room, protocol } of a PartyKit room.
+  // target: { host, room, protocol } of a server room.
   async startNet(target, opts) {
     this.disconnect();
     this._newSim(false);

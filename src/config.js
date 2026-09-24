@@ -4,7 +4,7 @@ export const TICK_RATE = 64;
 export const DT = 1 / TICK_RATE;
 export const DEG = Math.PI / 180;
 
-// Multiplayer (PartyKit): bump NET_PROTOCOL whenever the wire format changes.
+// Multiplayer: bump NET_PROTOCOL whenever the wire format changes.
 export const NET_PROTOCOL = 3;
 // How far in the past remote players are rendered (seconds), so there are always two snapshots to blend.
 export const NET_INTERP = 0.07;

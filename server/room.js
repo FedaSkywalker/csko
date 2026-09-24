@@ -1,7 +1,5 @@
-// PartyKit room = one match. Runs the authoritative simulation at 64 ticks per second, receives player
-// commands over WebSocket and sends every player a snapshot per tick.
-// Local:  npm run party      (vite build + partykit dev, http://localhost:1999)
-// Online: npm run deploy     (vite build + partykit deploy)
+// One game room = one match. Runs the authoritative simulation at 64 ticks per second, receives
+// player commands over WebSocket and sends every player a snapshot per tick.
 import { Sim } from '../src/sim.js';
 import { DT, NET_PROTOCOL } from '../src/config.js';
 import { encodeEvent, snapshotCommon, snapshotPrivate, rosterList, decodeCmd } from '../src/netcodec.js';
@@ -9,6 +7,7 @@ import { validMap } from '../src/map/layout.js';
 
 const STARVE_LIMIT = 8;
 const MAX_QUEUE = 16;
+export const MAX_HUMANS = 10;
 const DIFFICULTIES = ['easy', 'normal', 'hard'];
 const clampInt = (v, lo, hi, def) => {
   const n = Math.floor(Number(v));
@@ -20,12 +19,10 @@ function cleanName(n) {
   return s || 'Player';
 }
 
-export default class GameRoom {
-  // Never hibernate: the game loop has to keep ticking while players are connected.
-  options = { hibernate: false };
-
-  constructor(room) {
-    this.room = room;
+export class GameRoom {
+  // conn objects passed in: { id, send(string), close(code?, reason?) }
+  constructor(id, { debug = false } = {}) {
+    this.id = id;
     this.sim = null;
     this.clients = new Map(); // connection id -> client state
     this.running = false;
@@ -34,7 +31,11 @@ export default class GameRoom {
     this.restartAt = 0;
     this.cfg = { teamSize: 5, difficulty: 'normal', winsNeeded: 8, map: 'dustline' };
     this.timer = null;
-    this.debug = String(room.env?.BS_DEBUG || '') === '1';
+    this.debug = debug;
+  }
+
+  get empty() {
+    return this.clients.size === 0;
   }
 
   _ensureSim() {
@@ -56,48 +57,39 @@ export default class GameRoom {
   }
 
   onMessage(message, conn) {
-    if (typeof message !== 'string') return;
     const c = this.clients.get(conn.id);
     if (!c) return;
     let m;
     try { m = JSON.parse(message); } catch { return; }
-    try { this._handle(c, m); } catch (e) { console.error('message error', e); }
+    try { this._handle(c, m); } catch (e) { console.error(`[${this.id}] message error`, e); }
   }
 
   onClose(conn) {
     this._leave(conn.id);
   }
 
-  onError(conn) {
-    this._leave(conn.id);
-  }
-
-  // GET /parties/main/<room> answers with the room status (players, score).
-  onRequest(req) {
-    if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 });
+  // Room status for GET /api/room/<name>.
+  status() {
     const sim = this.sim;
-    return Response.json({
+    return {
       protocol: NET_PROTOCOL,
-      room: this.room.id,
+      room: this.id,
       running: this.running,
       cfg: this.cfg,
       map: this.cfg.map,
       players: sim ? sim.humans().map((a) => ({ name: a.name, team: a.team, alive: a.alive })) : [],
       round: sim ? sim.round.round : 0,
       score: sim ? sim.round.score : { T: 0, CT: 0 },
-    });
+    };
   }
 
   _send(c, obj) {
-    try { c.conn.send(JSON.stringify(obj)); } catch { /* socket already gone */ }
+    c.conn.send(JSON.stringify(obj));
   }
 
   _broadcastJoined(obj) {
     const s = JSON.stringify(obj);
-    for (const c of this.clients.values()) {
-      if (!c.agent) continue;
-      try { c.conn.send(s); } catch { /* ignore */ }
-    }
+    for (const c of this.clients.values()) if (c.agent) c.conn.send(s);
   }
 
   _uniqueName(base) {
@@ -115,13 +107,21 @@ export default class GameRoom {
     return Math.random() < 0.5 ? 'T' : 'CT';
   }
 
+  _reject(c, msg) {
+    this._send(c, { t: 'error', msg });
+    c.conn.close(1008, msg.slice(0, 120));
+  }
+
   _handle(c, m) {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'join') {
       if (c.agent) return;
       if (m.v !== NET_PROTOCOL) {
-        this._send(c, { t: 'error', msg: `Version mismatch (server ${NET_PROTOCOL}, client ${m.v}). Reload the page.` });
-        c.conn.close();
+        this._reject(c, `Version mismatch (server ${NET_PROTOCOL}, client ${m.v}). Reload the page.`);
+        return;
+      }
+      if (this.sim && this.sim.humans().length >= MAX_HUMANS) {
+        this._reject(c, `Room "${this.id}" is full (${MAX_HUMANS} players).`);
         return;
       }
       if (!this.running) {
@@ -148,7 +148,7 @@ export default class GameRoom {
       } else {
         c.agent = sim.addHuman(name, team);
       }
-      this._send(c, { t: 'welcome', id: c.agent.id, cfg: this.cfg, map: this.cfg.map, room: this.room.id, time: sim.time });
+      this._send(c, { t: 'welcome', id: c.agent.id, cfg: this.cfg, map: this.cfg.map, room: this.id, time: sim.time });
       this._send(c, { t: 'roster', list: rosterList(sim) });
       this.rosterDirty = true;
       return;
@@ -177,7 +177,7 @@ export default class GameRoom {
     }
   }
 
-  // Test hooks, only when started with BS_DEBUG=1 (partykit dev --var BS_DEBUG=1).
+  // Test hooks, only when the server runs with BS_DEBUG=1.
   _debug(c, m) {
     const sim = this.sim;
     const a = m.id != null ? sim.byId.get(m.id) : c.agent;
@@ -198,13 +198,15 @@ export default class GameRoom {
     this.sim.removeAgent(c.agent);
     c.agent = null;
     this.rosterDirty = true;
-    if (!this.sim.humans().length) {
-      // Last player left: stop the loop so the room can be evicted.
-      this._stopLoop();
-      this.running = false;
-      this.sim = null;
-      this.events = [];
-    }
+    if (!this.sim.humans().length) this.stop();
+  }
+
+  // Last player left (or the server shuts down): stop the loop and drop the match.
+  stop() {
+    this._stopLoop();
+    this.running = false;
+    this.sim = null;
+    this.events = [];
   }
 
   // ------------------------------------------------------------ game loop
@@ -253,7 +255,7 @@ export default class GameRoom {
         sim.startMatch(this.cfg);
       }
     } catch (e) {
-      console.error('tick error', e);
+      console.error(`[${this.id}] tick error`, e);
     }
     if (this.rosterDirty) {
       this.rosterDirty = false;
@@ -264,11 +266,11 @@ export default class GameRoom {
     for (const c of this.clients.values()) {
       if (!c.agent) continue;
       const head = `{"t":"s","ack":${c.ack},"q":${c.queue.length},"st":${c.starved > 0 ? 1 : 0},"me":${JSON.stringify(snapshotPrivate(c.agent))},`;
-      try { c.conn.send(head + common); } catch { /* ignore */ }
+      c.conn.send(head + common);
     }
   }
 
-  // Timers in the Workers runtime are coarse, so tick against the wall clock and catch up.
+  // Tick against the wall clock and catch up if the timer fires late.
   _startLoop() {
     if (this.timer) return;
     this.t0 = Date.now();

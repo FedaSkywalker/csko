@@ -1,5 +1,5 @@
 // Authoritative game simulation with no DOM or rendering. The browser runs it for single-player,
-// the PartyKit room runs it for multiplayer. Presentation code listens to `events`
+// the Node server runs it for every multiplayer room. Presentation code listens to `events`
 // (gameplay events plus 'fx' for effects/sounds).
 import { ECON, BOT_NAMES, DEG } from './config.js';
 import { inZone } from './map/layout.js';
