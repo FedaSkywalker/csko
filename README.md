@@ -224,3 +224,4 @@ Add `?test` to the URL (`http://localhost:5173/?test`) to skip the menu and poin
 mode exposes `window.game` for automated testing: `game.step(n)` advances n ticks, and
 `game.input.setKey(...)` / `game.input.setButton(...)` inject input.
 # csko
+# csko
