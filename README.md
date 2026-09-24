@@ -41,11 +41,11 @@ Pick the map in the menu (**Map**). The menu flyover shows the selected one.
   - The radar switches between **UPPER** and **LOWER** depending on where you stand; players on the
     other floor are drawn faded.
 
-## Multiplayer (PartyKit)
+## Multiplayer (Node server)
 
-Multiplayer runs on [PartyKit](https://docs.partykit.io/). Each **room** is its own match: a PartyKit
-room (a Cloudflare Durable Object) runs the authoritative simulation at 64 ticks per second.
-Everyone plays in the browser and joins by room name.
+Multiplayer runs on a small Node.js server (`server/`). It serves the built game and runs every
+room's authoritative simulation at 64 ticks per second over WebSockets. Each **room** is its own
+match. Everyone plays in the browser and joins by room name.
 
 ### Local network (one PC hosts)
 
@@ -54,34 +54,136 @@ On the host PC:
 ```bash
 cd browser-strike
 npm install
-npm run party
+npm run serve
 ```
 
-`npm run party` builds the client and starts `partykit dev`, which serves the game and the rooms on
-port 1999 on all network interfaces. It prints the addresses, for example:
+`npm run serve` builds the client and starts the server on port 3000 on all network interfaces. It
+prints the addresses, for example:
 
 ```
-Ready on http://0.0.0.0:1999
-- http://127.0.0.1:1999
-- http://192.168.1.23:1999
+Browser Strike server on http://localhost:3000
+  on your network: http://192.168.1.23:3000
 ```
 
-- The host opens `http://localhost:1999`, the others open the LAN address (`http://192.168.1.23:1999`).
+- The host opens `http://localhost:3000`, the others open the network address
+  (`http://192.168.1.23:3000`).
 - In the menu set your name and team, pick a **room** name (default `dustline`) and click **JOIN**.
   Everyone who types the same room plays together. Different rooms are separate matches.
 - The first player in an empty room decides the map, team size, bot skill and match length (the
   settings on the right side of the menu). Players who join later get the room's map automatically.
 
-### Online (anyone, anywhere)
+### VPS (online)
 
-```bash
-npx partykit login     # once, opens GitHub login in the browser
-npm run deploy
-```
+You need a Linux VPS with Node.js 18 or newer (20 or 22 LTS recommended) and git.
 
-`npm run deploy` builds the client and deploys the server and the static game to
-`https://browser-strike.<your-github-name>.partykit.dev`. Send that link to your friends; the page
-connects to its own host over `wss://`.
+1. Get the code and build it. `npm ci` also installs Vite, which the build needs.
+
+   ```bash
+   cd /opt
+   sudo git clone <your repository URL> browser-strike
+   sudo chown -R $USER browser-strike
+   cd browser-strike
+   npm ci
+   npm run build
+   ```
+
+2. Try it: run `npm start` and open `http://<VPS IP>:3000`. If nothing loads, open the port in the
+   firewall (for example `sudo ufw allow 3000/tcp`). Stop it with `Ctrl+C`.
+
+3. Keep it running with systemd. Create `/etc/systemd/system/browser-strike.service`:
+
+   ```ini
+   [Unit]
+   Description=Browser Strike game server
+   After=network.target
+
+   [Service]
+   WorkingDirectory=/opt/browser-strike
+   ExecStart=/usr/bin/node server/index.js
+   Environment=PORT=3000
+   Environment=HOST=127.0.0.1
+   Restart=always
+   RestartSec=2
+   User=www-data
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+   Check the Node path with `which node` and fix `ExecStart` if it differs. `HOST=127.0.0.1` is right
+   when nginx sits in front (step 4). Without nginx use `HOST=0.0.0.0` and open the port instead.
+
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now browser-strike
+   journalctl -u browser-strike -f      # server log
+   ```
+
+4. Put nginx in front for a domain and HTTPS. With HTTPS the page connects over `wss://` by itself.
+   `/etc/nginx/sites-available/browser-strike` (link it into `sites-enabled`):
+
+   ```nginx
+   server {
+       listen 80;
+       server_name strike.example.com;
+
+       location /ws/ {
+           proxy_pass http://127.0.0.1:3000;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+           proxy_set_header Host $host;
+           proxy_read_timeout 1h;
+       }
+
+       location / {
+           proxy_pass http://127.0.0.1:3000;
+           proxy_set_header Host $host;
+       }
+   }
+   ```
+
+   ```bash
+   sudo nginx -t && sudo systemctl reload nginx
+   sudo certbot --nginx -d strike.example.com     # free HTTPS certificate
+   sudo ufw allow 'Nginx Full'
+   ```
+
+   The domain's DNS `A` record must point to the VPS IP. Then send `https://strike.example.com` to
+   your friends.
+
+5. Update to a new version:
+
+   ```bash
+   cd /opt/browser-strike
+   git pull
+   npm ci
+   npm run build
+   sudo systemctl restart browser-strike
+   ```
+
+   Players reload the page. A client with an old build gets a version-mismatch message.
+
+Server settings (environment variables):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PORT` | `3000` | Port for the game page and the WebSockets |
+| `HOST` | `0.0.0.0` | Interface to listen on (`127.0.0.1` behind nginx) |
+| `MAX_ROOMS` | `32` | Rooms that can run at the same time |
+| `BS_DEBUG` | off | `1` enables test hooks. Never set it on a public server. |
+
+Endpoints:
+
+- `GET /api/health`: `{ ok, protocol, rooms }`
+- `GET /api/rooms`: the running rooms (map, players, round, score)
+- `GET /api/room/<room>`: status of one room
+- `ws(s)://<host>/ws/<room>`: the game connection
+
+Limits: at most 10 players per room (bots fill both teams up to 5v5), 64 KB per message. Dead
+connections are dropped after about 40 seconds, and a client that can't keep up with the snapshots
+(over 1 MB queued) is disconnected. The simulation is cheap: bot-only matches run about 1,500 times
+faster than real time on one core, so a small VPS can host several rooms.
 
 ### In the match
 
@@ -93,23 +195,23 @@ connects to its own host over `wss://`.
 - `Y` / `U` open the chat (everyone / team).
 - After a match ends, the next one starts automatically after about 12 seconds. A room shuts its game
   loop down when the last player leaves.
-- `GET /parties/main/<room>` returns the room status as JSON (players, round, score).
 
-If other PCs can't connect locally:
+If other PCs can't connect on a local network:
 
-- macOS may ask whether `workerd` (the PartyKit runtime) may accept incoming connections. Click
-  **Allow**. On Windows, allow Node.js / workerd through the firewall for private networks.
+- macOS may ask whether `node` may accept incoming connections. Click **Allow**. On Windows, allow
+  Node.js through the firewall for private networks.
 - Some Wi-Fi routers (especially guest networks) isolate devices from each other. Use a normal
   network or a cable.
-- Everyone must use the same build. After changing code, rebuild (`npm run party` again); clients with
-  an old page get a version-mismatch message and just need to reload.
+- Everyone must use the same build. After changing code, run `npm run serve` again; clients with an
+  old page get a version-mismatch message and just need to reload.
 
 How the netcode works: browsers send their inputs every tick, predict their own movement locally and
 correct it from the server snapshots. Other players are drawn about 70 ms in the past so their movement
 is smooth, and the server rewinds them to that moment when it checks your hits (lag compensation).
 
-For development run the PartyKit dev server and Vite side by side: `npx partykit dev` (port 1999) and
-`npm run dev` (port 5173, proxies `/parties` to 1999, JOIN works from the Vite page too).
+For development run the server and Vite side by side: `npm start` (port 3000, serves the last build;
+`BS_DEBUG=1 npm start` enables the test hooks) and `npm run dev` (port 5173, proxies `/ws` and `/api`
+to 3000, so JOIN works from the Vite page too).
 
 ## Controls
 
@@ -208,14 +310,14 @@ On Windows, `Ctrl+W` closes the browser tab and the page cannot block it. Crouch
 ## Project layout
 
 ```
-party/
-  server.js      PartyKit room: 64 Hz authoritative loop, snapshots, bots fill-in, lag compensation
-partykit.json    PartyKit project config (server entry, serves dist/)
+server/
+  index.js       Node server: the built game from dist/, WebSocket rooms, status API
+  room.js        one match: 64 Hz authoritative loop, snapshots, bots fill-in, lag compensation
 src/
   main.js        menu wiring, settings (localStorage), main loop
   game.js        client: renderer, camera, input, event wiring, local or networked session
   sim.js         the simulation (no DOM): agents, bots, rounds, lag compensation; runs in browser or Node
-  net.js         browser PartySocket client
+  net.js         browser WebSocket client
   netcodec.js    wire format: snapshots, events, commands
   views.js       meshes for dropped weapons, grenades and the planted bomb
   config.js      movement constants, weapons, spray patterns, economy, bot difficulty
